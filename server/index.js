@@ -31,7 +31,7 @@ const SESSION_HOURS = 8;
 
 const app = express();
 app.set('trust proxy', 1); // behind Render's proxy
-app.use(express.json({ limit: '200kb' }));
+app.use((req, res, next) => (req.path === '/api/staff-app/documents' ? next() : express.json({ limit: '200kb' })(req, res, next)));
 app.use(cookieParser());
 
 // ---------- helpers ----------
@@ -221,7 +221,7 @@ const allStaff = () => db.prepare(`SELECT u.full_name, p.* FROM staff_profiles p
 
 // bookings that block a person: any active booking on another event that overlaps this time window
 function clashFor(staffId, ev, ignoreEventId = ev.id) {
-  const rows = db.prepare(`SELECT b.status, e.* FROM bookings b JOIN events e ON e.id = b.event_id
+  const rows = db.prepare(`SELECT e.*, b.status AS booking_status FROM bookings b JOIN events e ON e.id = b.event_id
     WHERE b.staff_id = ? AND b.status != 'dropped' AND e.id != ? AND e.date = ?`).all(staffId, ignoreEventId, ev.date);
   return rows.filter((r) => L.overlaps(r, ev));
 }
@@ -252,7 +252,7 @@ function eventDetail(ev) {
     const people = bookings.filter((b) => b.role === r.role).map((b) => {
       cost += b.rate;
       const clash = b.status === 'invited'
-        ? clashFor(b.staff_id, ev).filter((c) => c.status !== 'invited')
+        ? clashFor(b.staff_id, ev).filter((c) => c.booking_status !== 'invited')
         : [];
       const conflict = clash.length > 0;
       if (conflict) conflicts += 1;
@@ -622,6 +622,7 @@ app.get('/api/admin/documents/:id', auth('admin'), wrap((req) => {
     position: idx >= 0 ? idx + 1 : null, total: q.length,
     prevId: idx > 0 ? q[idx - 1].id : null, nextId: idx >= 0 && idx < q.length - 1 ? q[idx + 1].id : (idx < 0 && q.length ? q[0].id : null),
     reasons: L.REJECT_REASONS,
+    images: doc.images ? JSON.parse(doc.images) : null,
   };
 }));
 
@@ -661,6 +662,182 @@ app.get('/api/admin/reviewed', auth('admin'), wrap(() => {
   const rows = db.prepare(`SELECT d.*, u.full_name, a.full_name AS reviewer FROM documents d JOIN users u ON u.id = d.staff_id
     LEFT JOIN users a ON a.id = d.reviewed_by WHERE d.status != 'pending' AND d.reviewed_at IS NOT NULL ORDER BY d.reviewed_at DESC LIMIT 60`).all();
   return { items: rows.map((r) => ({ id: r.id, worker: r.full_name, docType: r.doc_type, status: r.status, reviewer: r.reviewer, reviewedAt: r.reviewed_at, reasons: r.reject_reasons ? JSON.parse(r.reject_reasons) : [] })) };
+}));
+
+// ---------- field staff (mobile screens S12–S15) ----------
+const DOC_TYPES = ['CNIC', 'Food Safety', 'First Aid'];
+const IMAGE_RE = /^data:(image\/(jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
+
+function verificationOf(staffId) {
+  const latest = docStatus(staffId);
+  const docs = DOC_TYPES.map((t) => {
+    const row = db.prepare('SELECT * FROM documents WHERE staff_id = ? AND doc_type = ? ORDER BY id DESC LIMIT 1').get(staffId, t);
+    return {
+      type: t,
+      status: row?.status || 'not_submitted',
+      submittedAt: row?.submitted_at || null,
+      rejectReasons: row?.reject_reasons ? JSON.parse(row.reject_reasons) : [],
+      rejectMessage: row?.reject_message || null,
+    };
+  });
+  const cnic = docs[0].status;
+  // FR-05: one overall tracker: Not submitted → Pending audit → Verified Pro (or Rejected)
+  const overall = cnic === 'approved' ? 'verified' : cnic === 'pending' ? 'pending' : cnic === 'rejected' ? 'rejected' : 'not_submitted';
+  return { overall, docs, latest };
+}
+
+function shiftRow(b) {
+  const guide = L.UNIFORM_GUIDE[b.uniform] || L.UNIFORM_GUIDE['Own clothes'];
+  return {
+    bookingId: b.id, status: b.status, role: b.role, rate: b.rate,
+    event: { id: b.event_id, name: b.name, type: b.type, date: b.date, start: b.start_time, end: b.end_time, venue: b.venue, status: b.event_status },
+    manager: { name: b.manager_name, company: b.manager_company, phone: b.manager_phone },
+    uniform: { name: b.uniform, ...guide },
+    checklist: b.checklist ? JSON.parse(b.checklist) : [],
+  };
+}
+const SHIFT_SQL = `SELECT b.*, e.name, e.type, e.date, e.start_time, e.end_time, e.venue, e.status AS event_status,
+  COALESCE(r.uniform, 'Own clothes') AS uniform, m.full_name AS manager_name, m.company AS manager_company, m.phone AS manager_phone
+  FROM bookings b JOIN events e ON e.id = b.event_id JOIN users m ON m.id = e.manager_id
+  LEFT JOIN event_roles r ON r.event_id = e.id AND r.role = b.role`;
+
+function ownBooking(req) {
+  const b = db.prepare(`${SHIFT_SQL} WHERE b.id = ?`).get(Number(req.params.id));
+  if (!b || b.staff_id !== req.user.id) fail(404, 'NOT_FOUND', 'This shift is no longer available.');
+  return b;
+}
+
+app.get('/api/staff-app/home', auth('staff'), wrap((req) => {
+  const today = todayStr();
+  const rows = db.prepare(`${SHIFT_SQL} WHERE b.staff_id = ? AND b.status != 'dropped' ORDER BY e.date, e.start_time`).all(req.user.id);
+  const p = db.prepare('SELECT * FROM staff_profiles WHERE user_id = ?').get(req.user.id);
+  const certs = approvedCerts(req.user.id);
+  return {
+    name: req.user.full_name,
+    verification: verificationOf(req.user.id).overall,
+    rank: L.rankBreakdown(p, certs.length).rank,
+    upcoming: rows.filter((r) => r.date >= today).map(shiftRow),
+    past: rows.filter((r) => r.date < today).reverse().slice(0, 10).map(shiftRow),
+    savedAt: new Date().toISOString(),
+  };
+}));
+
+app.get('/api/staff-app/shifts/:id', auth('staff'), wrap((req) => shiftRow(ownBooking(req))));
+
+app.post('/api/staff-app/shifts/:id/accept', auth('staff'), wrap((req) => {
+  const b = ownBooking(req);
+  if (b.status !== 'invited') fail(409, 'NOT_INVITED', b.status === 'dropped' ? 'This invite was withdrawn by the manager.' : 'You already accepted this shift.');
+  if (b.date < todayStr()) fail(409, 'PAST', 'This shift has already happened.');
+  const ev = { id: b.event_id, date: b.date, start_time: b.start_time, end_time: b.end_time };
+  const clash = clashFor(req.user.id, ev).filter((c) => c.booking_status !== 'invited');
+  if (clash.length) fail(409, 'CONFLICT', `You already have a shift at this time (${clash[0].start_time}–${clash[0].end_time}). Decline one of them.`);
+  db.prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ?").run(b.id);
+  notify(db.prepare('SELECT manager_id FROM events WHERE id = ?').get(b.event_id).manager_id,
+    `${req.user.full_name} confirmed the shift`, `${b.name} · ${b.role}`, `/events/${b.event_id}/roster`);
+  return shiftRow(ownBooking(req));
+}));
+
+app.post('/api/staff-app/shifts/:id/decline', auth('staff'), wrap((req) => {
+  const b = ownBooking(req);
+  if (!['invited', 'confirmed'].includes(b.status)) fail(409, 'CLOSED', 'This shift can no longer be declined.');
+  if (b.date < todayStr()) fail(409, 'PAST', 'This shift has already happened.');
+  db.prepare("UPDATE bookings SET status = 'dropped', dropped_at = ? WHERE id = ?").run(nowSql(), b.id);
+  audit(req.user.id, 'decline', `booking:${b.id}`, b.name);
+  notify(db.prepare('SELECT manager_id FROM events WHERE id = ?').get(b.event_id).manager_id,
+    `${req.user.full_name} declined the shift`, `${b.name} · ${b.role}. One slot is open again.`, `/events/${b.event_id}/roster`);
+  return { ok: true };
+}));
+
+// FR-18: tick the checklist and confirm "Uniform Ready"; the manager sees it on the roster.
+app.post('/api/staff-app/shifts/:id/uniform', auth('staff'), wrap((req) => {
+  const b = ownBooking(req);
+  const items = (L.UNIFORM_GUIDE[b.uniform] || L.UNIFORM_GUIDE['Own clothes']).items;
+  const body = parse(z.object({ checked: z.array(z.enum(items)).max(items.length), ready: z.boolean().default(false) }), req.body);
+  if (b.status === 'invited' && body.ready) fail(409, 'NOT_CONFIRMED', 'Accept the shift first, then mark yourself Uniform Ready.');
+  if (b.status === 'dropped') fail(409, 'CLOSED', 'This shift is no longer yours.');
+  db.prepare('UPDATE bookings SET checklist = ? WHERE id = ?').run(JSON.stringify(body.checked), b.id);
+  if (body.ready && b.status === 'confirmed') {
+    db.prepare("UPDATE bookings SET status = 'uniform_ready' WHERE id = ?").run(b.id);
+    notify(db.prepare('SELECT manager_id FROM events WHERE id = ?').get(b.event_id).manager_id,
+      `${req.user.full_name} is Uniform Ready`, `${b.name} · ${b.role}`, `/events/${b.event_id}/roster`);
+  }
+  return shiftRow(ownBooking(req));
+}));
+
+// FR-03 to FR-05 and FR-07: verification status and upload
+app.get('/api/staff-app/verification', auth('staff'), wrap((req) => {
+  const v = verificationOf(req.user.id);
+  return { overall: v.overall, docs: v.docs, maxBytes: L.MAX_UPLOAD_BYTES };
+}));
+
+app.post('/api/staff-app/documents', auth('staff'), express.json({ limit: '16mb' }), wrap((req) => {
+  const b = parse(z.object({
+    docType: z.enum(DOC_TYPES, { message: 'Choose which document this is.' }),
+    images: z.array(z.string()).min(1, 'Add a photo of the document.').max(2),
+    details: z.object({
+      fatherName: z.string().trim().min(3, 'Enter your father’s name as written on the CNIC.').max(60),
+      dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter your date of birth.'),
+      cnic: z.string().trim().regex(/^\d{5}-?\d{7}-?\d$/, 'Enter the 13-digit CNIC number, e.g. 33100-1234567-1.'),
+    }).optional(),
+  }), req.body);
+  if (b.docType === 'CNIC' && !b.details) fail(422, 'VALIDATION', 'Enter your CNIC details first.');
+  if (b.details) {
+    const age = (Date.now() - new Date(b.details.dob).getTime()) / (365.25 * 864e5);
+    if (!(age >= 16 && age <= 80)) fail(422, 'VALIDATION', 'You must be at least 16 years old to work at events.', { fields: { dob: 'You must be at least 16 years old to work at events.' } });
+  }
+  const need = b.docType === 'CNIC' ? 2 : 1;
+  if (b.images.length !== need) fail(422, 'VALIDATION', b.docType === 'CNIC' ? 'Add photos of both the front and the back of your CNIC.' : 'Add one photo of the certificate.');
+  for (const img of b.images) {
+    const m = IMAGE_RE.exec(img);
+    if (!m) fail(422, 'BAD_FORMAT', 'This file type is not supported. Use a JPG or PNG photo.');
+    const bytes = Math.floor((m[3].length * 3) / 4);
+    if (bytes > L.MAX_UPLOAD_BYTES) fail(413, 'TOO_BIG', `This photo is ${(bytes / 1048576).toFixed(1)} MB (max 5 MB). Tap “Compress and use” to make it smaller.`);
+  }
+  const prev = db.prepare('SELECT status FROM documents WHERE staff_id = ? AND doc_type = ? ORDER BY id DESC LIMIT 1').get(req.user.id, b.docType);
+  if (prev?.status === 'pending') fail(409, 'ALREADY_PENDING', 'This document is already waiting for review. You will get a notification soon.');
+  if (prev?.status === 'approved') fail(409, 'ALREADY_APPROVED', 'This document is already verified.');
+  if (b.details) {
+    const digits = b.details.cnic.replace(/-/g, '');
+    db.prepare('UPDATE staff_profiles SET father_name = ?, dob = ?, cnic_masked = ? WHERE user_id = ?')
+      .run(b.details.fatherName, b.details.dob, `${digits.slice(0, 5)}-•••••••-${digits.slice(-1)}`, req.user.id);
+  }
+  db.prepare("INSERT INTO documents (staff_id, doc_type, status, is_resubmission, submitted_at, images) VALUES (?,?, 'pending', ?, ?, ?)")
+    .run(req.user.id, b.docType, prev?.status === 'rejected' ? 1 : 0, nowSql(), JSON.stringify(b.images));
+  for (const a of db.prepare("SELECT id FROM users WHERE role = 'admin'").all())
+    notify(a.id, `New ${b.docType} from ${req.user.full_name}`, prev?.status === 'rejected' ? 'Re-submitted after a rejection' : 'Waiting in the audit queue', '/admin/queue');
+  return { ok: true, ...verificationOf(req.user.id), latest: undefined };
+}));
+
+// S15 Profile & Availability (FR-22)
+const SLOTS = ['morning', 'afternoon', 'evening'];
+app.get('/api/staff-app/profile', auth('staff'), wrap((req) => {
+  const p = db.prepare('SELECT * FROM staff_profiles WHERE user_id = ?').get(req.user.id);
+  const certs = approvedCerts(req.user.id);
+  const { rank, parts } = L.rankBreakdown(p, certs.length);
+  const avail = db.prepare('SELECT day, slot FROM availability WHERE staff_id = ?').all(req.user.id).map((r) => `${r.day}-${r.slot}`);
+  return {
+    name: req.user.full_name, phone: req.user.phone, role: p.primary_role, rate: p.rate, city: p.city, color: p.avatar_color,
+    rank, parts, rating: p.rating_avg, jobs: p.jobs_completed, months: p.months_active,
+    verification: verificationOf(req.user.id).overall, availability: avail, roles: L.ROLES,
+  };
+}));
+
+app.put('/api/staff-app/profile', auth('staff'), wrap((req) => {
+  const b = parse(z.object({
+    role: z.enum(L.ROLES, { message: 'Choose the work you do.' }),
+    rate: z.number({ message: 'Enter your rate per shift.' }).int().min(500, 'Rate must be at least Rs 500.').max(20000, 'Rate must be at most Rs 20,000.'),
+    city: z.string().trim().min(2, 'Enter your city.').max(40),
+    availability: z.array(z.string().regex(/^[0-6]-(morning|afternoon|evening)$/)).max(21),
+  }), req.body);
+  tx(() => {
+    db.prepare('UPDATE staff_profiles SET primary_role = ?, rate = ?, city = ? WHERE user_id = ?').run(b.role, b.rate, b.city, req.user.id);
+    db.prepare('DELETE FROM availability WHERE staff_id = ?').run(req.user.id);
+    for (const a of new Set(b.availability)) {
+      const [day, slot] = a.split('-');
+      db.prepare('INSERT INTO availability (staff_id, day, slot) VALUES (?,?,?)').run(req.user.id, Number(day), slot);
+    }
+  });
+  return { ok: true, slots: SLOTS };
 }));
 
 // ---------- errors + static ----------

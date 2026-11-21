@@ -6,7 +6,7 @@ import { post } from '../api';
 import { Button, Field, PasswordInput } from '../components/ui';
 import { Brand, LangToggle } from '../components/Layout';
 
-const homeFor = (role) => (role === 'admin' ? '/admin/queue' : role === 'manager' ? '/dashboard' : '/staff-home');
+const homeFor = (role) => (role === 'admin' ? '/admin/queue' : role === 'manager' ? '/dashboard' : '/staff/shifts');
 
 function AuthFrame({ children }) {
   const { t } = useApp();
@@ -165,7 +165,7 @@ export function Login() {
       <form className="stack" style={{ gap: 20 }} onSubmit={submit} noValidate>
         <div>
           <h2>{t('Log in')}</h2>
-          <p className="muted">{t('For event managers and admins.')}</p>
+          <p className="muted">{t('For event managers, field staff and admins.')}</p>
         </div>
         {banner && <div className="banner banner-error" role="alert" style={{ margin: 0 }}><Lock size={18} aria-hidden />{banner}</div>}
         <Field label={t('Mobile number')} error={errors.phone} hint={t('11 digits, starts with 03')}>
@@ -192,7 +192,7 @@ export function Register() {
   const { t, lang } = useApp();
   const [step, setStep] = useState(0);
   const [role, setRole] = useState('');
-  const [form, setForm] = useState({ fullName: '', phone: '', password: '', company: '' });
+  const [form, setForm] = useState({ fullName: '', phone: '', password: '', company: '', primaryRole: '' });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [challenge, setChallenge] = useState(null);
@@ -200,6 +200,7 @@ export function Register() {
 
   const validate = () => {
     const e = {};
+    if (role === 'staff' && !form.primaryRole) e.primaryRole = t('Choose the work you do.');
     if (form.fullName.trim().length < 3) e.fullName = t('Enter your full name (at least 3 letters).');
     if (!/^03\d{9}$/.test(form.phone)) e.phone = t('Enter an 11-digit mobile number, e.g. 03001234567.');
     if (form.password.length < 8) e.password = t('Password must be at least 8 characters.');
@@ -211,7 +212,7 @@ export function Register() {
     const e = validate(); setErrors(e);
     if (Object.keys(e).length) return;
     setLoading(true);
-    try { setChallenge(await post('/auth/register', { role, ...form, language: lang })); }
+    try { const { primaryRole, company, ...rest } = form; setChallenge(await post('/auth/register', { role, ...rest, language: lang, ...(role === 'staff' ? { primaryRole } : { company: company || undefined }) })); }
     catch (err) { setErrors(err.body.fields || { _: err.message }); }
     finally { setLoading(false); }
   };
@@ -235,11 +236,7 @@ export function Register() {
               <span><b style={{ display: 'block' }}>{t('Field Staff')}</b><span className="muted small">{t('I work at events')}</span></span>
             </button>
           </div>
-          {role === 'staff' && (
-            <div className="banner banner-info" style={{ margin: 0 }}><Smartphone size={20} color="var(--indigo-600)" aria-hidden />
-              <span className="small">{t('Field staff use the EventFlow Pro mobile app to find shifts and upload documents. Open this site on your phone to sign up.')}</span></div>
-          )}
-          <Button onClick={() => setStep(1)} disabled={role !== 'manager'} block>{t('Next')}<ArrowRight size={18} className="flip" aria-hidden /></Button>
+          <Button onClick={() => setStep(1)} disabled={!role} block>{t('Next')}<ArrowRight size={18} className="flip" aria-hidden /></Button>
           <p className="muted" style={{ textAlign: 'center' }}>{t('Already have an account?')} <Link to="/login">{t('Log in')}</Link></p>
         </div>
       ) : (
@@ -254,7 +251,13 @@ export function Register() {
           <Field label={t('Mobile number')} error={errors.phone} hint={t('11 digits, starts with 03')}>
             {(a) => <input className="input latin" dir="ltr" {...a} inputMode="numeric" autoComplete="tel" placeholder="03001234567" value={form.phone} onChange={set('phone')} />}
           </Field>
-          <Field label={t('Company (optional)')} error={errors.company}>{(a) => <input className="input" {...a} autoComplete="organization" value={form.company} onChange={set('company')} />}</Field>
+          {role === 'staff' ? (
+            <Field label={t('Work you do')} error={errors.primaryRole}>
+              {(a) => <select className="select" {...a} value={form.primaryRole} onChange={set('primaryRole')}><option value="">{t('Choose…')}</option>{['Waiter', 'Security', 'Sound tech', 'Usher', 'Cleaner'].map((r) => <option key={r} value={r}>{t(r)}</option>)}</select>}
+            </Field>
+          ) : (
+            <Field label={t('Company (optional)')} error={errors.company}>{(a) => <input className="input" {...a} autoComplete="organization" value={form.company} onChange={set('company')} />}</Field>
+          )}
           <Field label={t('Password')} error={errors.password} hint={t('At least 8 characters with one number')}>
             {(a) => <PasswordInput {...a} autoComplete="new-password" value={form.password} onChange={set('password')} />}
           </Field>
@@ -265,20 +268,3 @@ export function Register() {
   );
 }
 
-// Field staff opening the desktop site
-export function StaffHome() {
-  const { t, logout, user } = useApp();
-  const nav = useNavigate();
-  return (
-    <AuthFrame>
-      <div className="stack" style={{ gap: 16 }}>
-        <div className="state" style={{ padding: 0, alignItems: 'flex-start', textAlign: 'start' }}>
-          <div className="icon-circle"><Smartphone size={32} aria-hidden /></div>
-          <h2>{t('Hi {n}, please use your phone', { n: user?.fullName?.split(' ')[0] || '' })}</h2>
-          <p className="muted">{t('Shifts, document upload and the uniform guide are in the mobile app. This desktop site is for event managers and admins.')}</p>
-        </div>
-        <Button variant="secondary" onClick={async () => { await logout(); nav('/login'); }}>{t('Log out')}</Button>
-      </div>
-    </AuthFrame>
-  );
-}

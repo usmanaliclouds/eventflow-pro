@@ -135,11 +135,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS availability (
+  staff_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day       INTEGER NOT NULL CHECK (day BETWEEN 0 AND 6),
+  slot      TEXT NOT NULL CHECK (slot IN ('morning','afternoon','evening')),
+  PRIMARY KEY (staff_id, day, slot)
+);
+
 CREATE INDEX IF NOT EXISTS idx_bookings_event ON bookings(event_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_staff ON bookings(staff_id);
 CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
 `);
+
+// columns added after the first version (safe to run on an old database file)
+const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+if (!cols('documents').includes('images')) db.exec('ALTER TABLE documents ADD COLUMN images TEXT');
+if (!cols('bookings').includes('checklist')) db.exec('ALTER TABLE bookings ADD COLUMN checklist TEXT');
 
 function tx(fn) {
   db.exec('BEGIN');

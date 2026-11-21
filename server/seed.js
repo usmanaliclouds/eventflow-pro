@@ -83,8 +83,10 @@ const staffList = [
   ['Muhammad Asif', 'Waiter', 1600, 2, 0, 0, 0, []],
   ['Iqra Naveed', 'Waiter', 1450, 1, 0, 0, 0, []],
   ['Faisal Mehmood', 'Cleaner', 1100, 1, 0, 0, 0, []],
+  ['Asif Mehmood', 'Waiter', 1500, 1, 0, 0, 0, []],
 ];
 
+const DEMO_PHONES = { 'Bilal Khan': '03211234567', 'Asif Mehmood': '03219876543' };
 const FATHERS = ['Muhammad Akram', 'Abdul Rasheed', 'Ghulam Nabi', 'Muhammad Iqbal', 'Riaz Ahmed', 'Javed Akhtar', 'Shaukat Ali', 'Nazir Hussain'];
 const insProfile = db.prepare(`INSERT INTO staff_profiles
   (user_id, primary_role, rate, months_active, rating_avg, rating_count, jobs_completed, avatar_color, father_name, dob, cnic_masked)
@@ -94,8 +96,8 @@ const insDoc = db.prepare(`INSERT INTO documents (staff_id, doc_type, status, is
 
 const staff = {}; // name -> id
 staffList.forEach(([name, role, rate, months, rating, count, jobs, certs], i) => {
-  const phone = '0321' + String(1000000 + i * 7919).slice(-7);
-  const id = addUser('staff', name, phone, 'Staff@123', null, i % 3 === 0 ? 'ur' : 'en');
+  const phone = DEMO_PHONES[name] || '0321' + String(1000000 + i * 7919).slice(-7);
+  const id = addUser('staff', name, phone, 'Staff@123', null, DEMO_PHONES[name] || i % 3 ? 'en' : 'ur');
   const year = 1990 + (i % 14);
   insProfile.run(id, role, rate, months, rating, count, jobs, COLORS[i % COLORS.length],
     FATHERS[i % FATHERS.length], `${year}-0${(i % 9) + 1}-1${i % 9}`, `33100-•••••••-${(i * 37) % 10}`);
@@ -133,7 +135,7 @@ const aslam = event(tariq, 'Aslam Wedding', 'Wedding', day(6), '18:00', '23:00',
 insRole.run(aslam, 'Waiter', 12, 1500, 2000, 'Black & white formal');
 insRole.run(aslam, 'Security', 3, 2000, 2500, 'Black suit');
 insRole.run(aslam, 'Sound tech', 1, 2800, 3200, 'Own clothes');
-book(aslam, 'Bilal Khan', 'Waiter', 'uniform_ready');
+book(aslam, 'Bilal Khan', 'Waiter', 'confirmed');
 book(aslam, 'Usman Tariq', 'Waiter', 'confirmed');
 book(aslam, 'Zahid Khan', 'Waiter', 'invited');
 book(aslam, 'Saeed Akhtar', 'Waiter', 'invited'); // becomes a conflict (booked elsewhere below)
@@ -172,6 +174,8 @@ book(expo, 'Waseem Akbar', 'Cleaner', 'confirmed');
 const corp = event(tariq, 'Nishat Annual Dinner', 'Corporate', day(27), '19:30', '23:00', 'Faisalabad Serena, Ballroom', 250, 30000);
 insRole.run(corp, 'Waiter', 9, 1600, 2000, 'Black & white formal');
 insRole.run(corp, 'Security', 2, 2000, 2500, 'Black suit');
+book(corp, 'Bilal Khan', 'Waiter', 'invited');
+book(corp, 'Sana Tariq', 'Waiter', 'confirmed');
 
 // Completed, waiting for review
 const khan = event(tariq, 'Khan Walima', 'Walima', day(-9), '13:00', '17:00', 'Royal Palm Marquee, Satiana Road', 350, 28000, 'completed', 24350);
@@ -224,6 +228,15 @@ Object.values(staff).forEach((sid, i) => {
   });
 });
 
+// Asif's CNIC was rejected (shows the re-upload flow on the staff side)
+insDoc.run(staff['Asif Mehmood'], 'CNIC', 'rejected', 0, ago(30), ago(26), admin,
+  JSON.stringify(['Blurry photo']), 'Your CNIC photo is blurry. Please retake the front photo in good light.');
+
+// Bilal's weekly availability (S15)
+const insAv = db.prepare('INSERT INTO availability (staff_id, day, slot) VALUES (?,?,?)');
+for (const d of [0, 1, 2, 3, 4, 5, 6]) for (const sl of ['evening']) insAv.run(staff['Bilal Khan'], d, sl);
+for (const d of [5, 6]) insAv.run(staff['Bilal Khan'], d, 'afternoon');
+
 // ---------- notifications ----------
 const insN = db.prepare('INSERT INTO notifications (user_id, title, body, link, is_read, created_at) VALUES (?,?,?,?,?,?)');
 insN.run(tariq, 'Ayesha R. confirmed her shift', 'Sheikh Mehndi · Waiter', `/events/${sheikh}/roster`, 0, ago(0.05));
@@ -231,9 +244,13 @@ insN.run(tariq, 'Conflict: Saeed A. is booked elsewhere', 'Aslam Wedding · pick
 insN.run(tariq, 'Aslam Wedding: 4 slots unfilled', 'Fill them so your team is confirmed 48 hours before the event.', `/events/${aslam}/roster`, 0, ago(3));
 insN.run(tariq, 'Invoice ready for Bajwa Mehndi', 'Saved Rs 1,600 against the plan', '/analytics', 1, ago(26));
 insN.run(tariq, '3 staff accepted invites', 'Tech Expo 2026', `/events/${expo}/roster`, 1, ago(28));
+insN.run(staff['Bilal Khan'], 'New shift invite: Nishat Annual Dinner', 'Waiter · Rs 1,900 · please accept or decline', '/staff/shifts', 0, ago(2));
+insN.run(staff['Bilal Khan'], 'Aslam Wedding is in 6 days', 'Check your uniform: black & white formal', '/staff/shifts', 0, ago(5));
+insN.run(staff['Asif Mehmood'], 'CNIC needs a new photo', 'Your CNIC photo is blurry. Please retake the front photo in good light.', '/staff/verify', 0, ago(26));
 insN.run(admin, '13 documents waiting', 'Oldest has been waiting 30 hours', '/admin/queue', 0, ago(0.5));
 insN.run(admin, 'Re-submission from Owais Raza', 'CNIC · after "Blurry photo"', '/admin/queue', 0, ago(18));
 
 console.log('Seeded', DB_FILE);
 console.log('Manager login: 03001234567 / Manager@123');
 console.log('Admin login:   03111234567 / Admin@123');
+console.log('Staff login:   03211234567 / Staff@123 (verified)  ·  03219876543 / Staff@123 (CNIC rejected)');

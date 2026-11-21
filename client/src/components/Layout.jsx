@@ -64,7 +64,7 @@ function Sidebar() {
   );
 }
 
-function NotificationsPanel({ onClose }) {
+export function NotificationsPanel({ onClose, inline }) {
   const { t, setUnread } = useApp();
   const nav = useNavigate();
   const [tab, setTab] = useState('all');
@@ -98,9 +98,9 @@ function NotificationsPanel({ onClose }) {
     </div>
   );
   return (
-    <div className="popover" role="dialog" aria-label={t('Notifications')}>
+    <div className={inline ? 'popover notif-inline' : 'popover'} role={inline ? undefined : 'dialog'} aria-label={t('Notifications')}>
       <div className="row" style={{ padding: '16px 16px 0' }}>
-        <h3 style={{ flex: 1 }}>{t('Notifications')}</h3>
+        <h3 style={{ flex: 1 }}>{inline ? '' : t('Notifications')}</h3>
         <button className="btn btn-text btn-sm" onClick={readAll} disabled={!data?.unread}>{t('Mark all as read')}</button>
       </div>
       <div className="tabs" role="tablist" style={{ padding: '0 16px', marginBottom: 0 }}>

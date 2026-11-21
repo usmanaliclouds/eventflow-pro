@@ -5,8 +5,11 @@
 EventFlow Pro is a web app for event managers in Pakistan (weddings, mehndis, walimas, corporate dinners, expos):
 
 * **Managers** create an event, plan how many waiters, security and other staff they need, and hire them from a marketplace. A budget meter updates with every hire and drop.
+* **Field staff** (waiters, security, ushers…) sign up, upload their CNIC and certificates, accept shift invites and check what uniform to wear. Their screens are made for phones.
 * **Admins** check workers' CNIC and certificates. Approved workers get a **Verified Pro** badge, and only they can be hired.
 * The whole app works in **English and Urdu** (right-to-left).
+
+One link serves everyone: managers and admins get the desktop layout, field staff get the phone layout. On a computer the staff screens open in a phone-sized window in the middle of the page.
 
 Course project for **CS3014 Applied Human-Computer Interaction, FAST NUCES, Fall 2026 (Phase 4)**.
 
@@ -25,6 +28,10 @@ Course project for **CS3014 Applied Human-Computer Interaction, FAST NUCES, Fall
 |---|---|---|
 | Event manager (Tariq Mehmood) | `03001234567` | `Manager@123` |
 | Admin (Farah Naz) | `03111234567` | `Admin@123` |
+| Field staff, verified (Bilal Khan) | `03211234567` | `Staff@123` |
+| Field staff, CNIC rejected (Asif Mehmood) | `03219876543` | `Staff@123` |
+
+You can also press **Create account → Field Staff** to sign up as a new worker.
 
 After the password the app asks for a **6-digit code**. No SMS service is connected, so the code is **shown on the screen** in a blue box. Type it in.
 
@@ -36,7 +43,9 @@ After the password the app asks for a **6-digit code**. No SMS service is connec
 4. Saeed Akhtar is **booked elsewhere** (orange row). Press **Replace** next to one of the suggested people.
 5. Open **Analytics** to see the savings charts, and **Export CSV**.
 6. Switch to **اردو** at the top right.
-7. **Admin:** log out, log in as admin, open a document in the **Audit Queue**, then mark every field **Matches** and **Approve**, or **Reject** with a reason.
+7. **Field staff (best on a phone):** log in as Bilal. **Accept** the Nishat Annual Dinner invite, open the **Uniform Guide**, tick the checklist and press **I'm Uniform Ready**. Then log in as the manager again: Bilal shows **Uniform Ready** on the Aslam Wedding roster.
+8. **New worker:** create a Field Staff account, open **Verify**, type your CNIC details and add photos of the front and back. Photos over 5 MB get a **Compress and use** button.
+9. **Admin:** log in as admin, open the new document in the **Audit Queue** (you will see the uploaded photos), mark every field **Matches** and **Approve**, or **Reject** with a reason. The worker sees the reason on their Verify screen.
 
 ---
 
@@ -45,19 +54,17 @@ After the password the app asks for a **6-digit code**. No SMS service is connec
 **You need:** [Node.js](https://nodejs.org) version **22.13 or newer**. Check with `node -v`.
 
 ```bash
-git clone https://github.com/<your-username>/eventflow-pro.git
+git clone https://github.com/usmanaliclouds/eventflow-pro.git
 cd eventflow-pro
-npm run setup      # install packages (about 1 minute)
-npm run build      # build the website
-npm start          # start the app
+npm run build      # installs packages and builds the website (about 1 minute)
+npm start          # starts the app
 ```
 
 Open **http://localhost:4000** and log in with a test account above.
 
 | Command | What it does |
 |---|---|
-| `npm run setup` | Installs packages for the server and the website |
-| `npm run build` | Builds the website into `client/dist` |
+| `npm run build` | Installs packages and builds the website into `client/dist` |
 | `npm start` | Starts the app on port 4000 (creates demo data on the first run) |
 | `npm run seed` | Wipes the database and fills it with fresh demo data |
 | `npm run dev` | For developers: the page reloads on save (website on http://localhost:5173) |
@@ -69,16 +76,34 @@ Open **http://localhost:4000** and log in with a test account above.
 
 ---
 
-## 🚀 Put it online (Render, free)
+## 🚀 Put it online
 
-1. Push this code to GitHub.
-2. Go to **https://render.com** and sign up with your GitHub account.
-3. Click **New + → Blueprint** and pick the `eventflow-pro` repository.
-4. Render reads `render.yaml` and fills in everything. Click **Apply**.
-5. Wait about 3–5 minutes for the first build. Your link appears at the top (for example `https://eventflow-pro.onrender.com`).
-6. Put that link in this README and in Section 1 of the report.
+The app is a single Node.js service: the server also serves the website. Any host that runs Node.js 22.13+ or a Dockerfile works. You don't need to change any settings:
 
-`render.yaml` creates a random `JWT_SECRET` for you, so no password is ever stored in the code. Every new push to GitHub redeploys the app by itself.
+* **Build command:** `npm run build`
+* **Start command:** `npm start`
+* **Port:** the host's `PORT` variable is used automatically
+
+### Option A: Render (free, no card)
+
+1. Sign up at **https://render.com** with GitHub.
+2. **New + → Blueprint** → pick `eventflow-pro` → **Apply**. `render.yaml` sets everything, including a random `JWT_SECRET`.
+3. After 3–5 minutes the link appears at the top of the service page.
+
+If you made a normal **Web Service** instead of a Blueprint, set Build Command `npm run build`, Start Command `npm start`, and add an environment variable `NODE_VERSION` = `22.14.0`.
+
+### Option B: Railway (trial credit, then paid)
+
+1. Sign up at **https://railway.com** with GitHub.
+2. **New Project → Deploy from GitHub repo** → pick `eventflow-pro`. Railway finds the `Dockerfile` and builds it.
+3. Open the service → **Variables** → add `JWT_SECRET` = any long random text.
+4. **Settings → Networking → Generate Domain** gives you the public link.
+
+### Notes for any host
+
+* `JWT_SECRET` keeps people logged in across restarts. Without it everyone is logged out when the server restarts, but nothing breaks.
+* On free plans the database file is not kept between restarts, so the app starts again with fresh demo data. That is fine for a demo.
+* Free Render services sleep after 15 minutes without visitors. The first visit after that takes about 50 seconds.
 
 ---
 
@@ -88,7 +113,7 @@ Open **http://localhost:4000** and log in with a test account above.
 eventflow-pro/
 ├── client/                 Website (React + Vite)
 │   └── src/
-│       ├── pages/          One file per screen group (Dashboard, Roster, Admin…)
+│       ├── pages/          One file per screen group (Dashboard, Roster, Admin, Staff…)
 │       ├── components/     Shared parts: layout, buttons, charts, dialogs
 │       ├── i18n-ur.js      Urdu translations
 │       └── styles.css      Colours, fonts, spacing (from the Phase 3 style guide)
@@ -97,6 +122,7 @@ eventflow-pro/
 │   ├── db.js               Database tables
 │   ├── seed.js             Demo data
 │   └── lib.js              Rank formula, time-clash and staff-ratio rules
+├── Dockerfile              Build recipe for Railway, Koyeb, Fly.io…
 ├── render.yaml             Settings for hosting on Render
 └── package.json            The commands listed above
 ```
@@ -125,7 +151,15 @@ Screen IDs match the Phase 2 sitemap.
 | S19 Settings & Help | Language, text size up to 200%, high contrast, notifications |
 | S20 System states | Loading, empty, error with "Try again", offline bar, session expired, page not found |
 
-The field-staff mobile screens from Phase 3 (S12–S15) are not part of this build.
+**Field staff (phone layout)**
+
+| Screen | What you can do |
+|---|---|
+| S12 My Shifts | Verification prompt, next shift highlighted, accept or decline invites, past shifts. Still opens offline with the last saved shifts. |
+| Shift details | Venue with a Maps link, call the manager, open the uniform guide |
+| S13 Verify | Status tracker (Not submitted → Pending audit → Verified Pro), CNIC details, step-by-step photo upload with tips. Warns about wrong file types and photos over 5 MB, and offers to compress them. Shows the admin's reason after a rejection, with Re-upload. |
+| S14 Uniform Guide | Correct and incorrect outfit pictures, a text version when pictures can't be seen, a checklist, and "I'm Uniform Ready" (the manager sees it). Works offline. |
+| S15 Profile & Availability | Rank, rating and jobs, edit work type, rate and city, weekly availability grid (tap or drag), unsaved-changes warning |
 
 ---
 
@@ -176,7 +210,14 @@ The field-staff mobile screens from Phase 3 (S12–S15) are not part of this bui
 | /api/admin/documents/:id | GET | One document with profile data | S17 |
 | /api/admin/documents/:id/approve, /reject | POST | Decision | S17 |
 | /api/admin/reviewed | GET | Past decisions | Reviewed |
-| /api/health | GET | Used by Render to check the app is up | — |
+| /api/staff-app/home | GET | Shifts, verification status, rank | S12 |
+| /api/staff-app/shifts/:id | GET | One shift with its uniform guide | S12, S14 |
+| /api/staff-app/shifts/:id/accept, /decline | POST | Answer an invite | S12 |
+| /api/staff-app/shifts/:id/uniform | POST | Save checklist, mark Uniform Ready | S14 |
+| /api/staff-app/verification | GET | Document status and rejection reasons | S13 |
+| /api/staff-app/documents | POST | Upload CNIC or certificate photos (max 5 MB each) | S13 |
+| /api/staff-app/profile | GET, PUT | Profile and weekly availability | S15 |
+| /api/health | GET | Lets the host check the app is up | — |
 
 </details>
 
@@ -195,6 +236,7 @@ The field-staff mobile screens from Phase 3 (S12–S15) are not part of this bui
 | reviews | stars, tags, comment | Post-event ratings |
 | notifications | title, body, link, is_read | Bell panel |
 | audit_log | actor, action, target, detail | Record of drops, undos, approvals, rejections |
+| availability | staff_id, day, slot | Weekly times a worker is free |
 
 </details>
 
@@ -215,4 +257,3 @@ Instructor: Mughees Ismail
 * Icons: [Lucide](https://lucide.dev) (ISC licence)
 * Fonts: [Inter](https://fonts.google.com/specimen/Inter) and [Noto Nastaliq Urdu](https://fonts.google.com/noto/specimen/Noto+Nastaliq+Urdu) (SIL Open Font Licence)
 * All people, companies and events in the demo data are made up.
-* Generative AI: Claude (Anthropic) was used to help write the code, as declared in the Phase 4 report.

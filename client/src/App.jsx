@@ -3,7 +3,9 @@ import { LogIn, Compass, ShieldAlert } from 'lucide-react';
 import { AppProvider, useApp } from './context';
 import Layout from './components/Layout';
 import { Button, Loading } from './components/ui';
-import { Login, Register, Welcome, StaffHome } from './pages/Auth';
+import { Login, Register, Welcome } from './pages/Auth';
+import StaffLayout from './components/StaffLayout';
+import { StaffShifts, ShiftDetail, UniformTab, UniformGuide, Verify, StaffProfile, StaffNotifications, StaffSettings } from './pages/Staff';
 import Dashboard from './pages/Dashboard';
 import CreateEvent from './pages/CreateEvent';
 import Marketplace from './pages/Marketplace';
@@ -13,7 +15,7 @@ import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import { AuditQueue, DocumentReview, Reviewed } from './pages/Admin';
 
-const home = (u) => (u.role === 'admin' ? '/admin/queue' : u.role === 'manager' ? '/dashboard' : '/staff-home');
+const home = (u) => (u.role === 'admin' ? '/admin/queue' : u.role === 'manager' ? '/dashboard' : '/staff/shifts');
 const chosenLang = () => { try { return localStorage.getItem('ef_lang_chosen'); } catch { return '1'; } };
 
 function Root() {
@@ -109,7 +111,24 @@ const router = createBrowserRouter([
         { path: '/login', element: <Login /> },
         { path: '/register', element: <Register /> },
       ] },
-      { element: <Guard roles={['staff']} />, children: [{ path: '/staff-home', element: <StaffHome /> }] },
+      { element: <Guard roles={['staff']} />, children: [{
+        element: <StaffLayout />,
+        children: [
+          { path: '/staff', element: <Navigate to="/staff/shifts" replace /> },
+          { path: '/staff/shifts', element: <StaffShifts /> },
+          { path: '/staff/shifts/:id', element: <ShiftDetail /> },
+          { path: '/staff/uniform', element: <UniformTab /> },
+          { path: '/staff/uniform/:id', element: <UniformGuide /> },
+          { path: '/staff/verify', element: <Verify /> },
+          { path: '/staff/profile', element: <StaffProfile /> },
+          { path: '/staff/notifications', element: <StaffNotifications /> },
+          { path: '/staff/settings', element: <StaffSettings /> },
+        ],
+      }] },
+      // old links from notifications
+      { path: '/shifts', element: <Navigate to="/staff/shifts" replace /> },
+      { path: '/verify', element: <Navigate to="/staff/verify" replace /> },
+      { path: '/profile', element: <Navigate to="/staff/profile" replace /> },
       { element: <Guard roles={['manager', 'admin']} />, children: [{
         element: <Layout />,
         children: [

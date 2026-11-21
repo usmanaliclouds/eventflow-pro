@@ -222,7 +222,10 @@ export function DocumentReview() {
               <button aria-pressed={side === 'back'} onClick={() => setSide('back')} style={{ borderRadius: 999 }}>{t('Back')}</button>
             </div>
           )}
-          <IdCard side={side} docType={d.docType} worker={d.worker} zoom={zoom} rot={rot} />
+          {d.images?.length ? (
+            <img src={d.images[d.docType === 'CNIC' && side === 'back' ? 1 : 0] || d.images[0]} alt={t('Uploaded document photo')}
+              style={{ maxWidth: '90%', maxHeight: 460, marginTop: 72, borderRadius: 10, transform: `scale(${zoom}) rotate(${rot}deg)`, transition: 'transform .2s', background: '#fff' }} />
+          ) : <IdCard side={side} docType={d.docType} worker={d.worker} zoom={zoom} rot={rot} />}
           <div className="doc-tools">
             <button onClick={() => setZoom((z) => Math.min(2, z + 0.2))} aria-label={t('Zoom in')}><ZoomIn size={22} /></button>
             <button onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))} aria-label={t('Zoom out')}><ZoomOut size={22} /></button>

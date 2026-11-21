@@ -12,7 +12,7 @@ function Section({ title, children }) {
   );
 }
 
-export default function Settings() {
+export default function Settings({ embedded }) {
   const { t, lang, user, textSize, contrast, saveSettings, toast } = useApp();
   const nav = useNavigate();
   const [size, setSize] = useState(textSize);
@@ -23,10 +23,10 @@ export default function Settings() {
   };
   return (
     <div style={{ maxWidth: 680 }}>
-      <div className="page-head">
+      {!embedded && <div className="page-head">
         <button className="icon-btn" onClick={() => nav(-1)} aria-label={t('Back')}><ArrowLeft size={22} className="flip" /></button>
         <h1 style={{ fontSize: '1.75rem' }}>{t('Settings & Help')}</h1>
-      </div>
+      </div>}
 
       <Section title={t('Language')}>
         <div className="seg" role="group" aria-label={t('Language')} style={{ width: 'min(100%, 360px)', display: 'flex' }}>
