@@ -244,11 +244,11 @@ Screen IDs match the Phase 2 sitemap.
 
 ## 👥 Team
 
-| Member | Roll no. | Built |
+| Member | Roll no. | Contribution |
 |---|---|---|
-| Usman Ali Shahid (group leader) | 24F-0512 | _fill in_ |
-| Abdul Hayee Kamran | 24F-0596 | _fill in_ |
-| Taheer Bin Hussain | 24F-0567 | _fill in_ |
+| Usman Ali Shahid (group leader) | 24F-0512 | Manager screens S5 to S11 and prototype flows F1 and F2; the matching app pages; back end, database and hosting |
+| Abdul Hayee Kamran | 24F-0596 | Entry and field-staff screens S1 to S4 and S12 to S15, flows F0, F3 and F4; the matching app pages and Urdu labels |
+| Taheer Bin Hussain | 24F-0567 | Admin and shared screens S16 to S20, flows F5 and F6; design system page, colour and contrast checks |
 
 Instructor: Mughees Ismail
 
